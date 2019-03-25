@@ -3,6 +3,7 @@ package com.dylanvann.fastimage;
 import android.app.Activity;
 import android.content.Context;
 import android.os.Build;
+import android.util.Log;
 
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.RequestManager;
@@ -16,6 +17,7 @@ import com.facebook.react.uimanager.ThemedReactContext;
 import com.facebook.react.uimanager.annotations.ReactProp;
 import com.facebook.react.uimanager.events.RCTEventEmitter;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -34,6 +36,7 @@ class FastImageViewManager extends SimpleViewManager<FastImageViewWithUrl> imple
     private static final String REACT_ON_LOAD_START_EVENT = "onFastImageLoadStart";
     private static final String REACT_ON_PROGRESS_EVENT = "onFastImageProgress";
     private static final Map<String, List<FastImageViewWithUrl>> VIEWS_FOR_URLS = new WeakHashMap<>();
+    private ThemedReactContext ctx;
 
     @Nullable
     private RequestManager requestManager = null;
@@ -46,6 +49,7 @@ class FastImageViewManager extends SimpleViewManager<FastImageViewWithUrl> imple
     @Override
     protected FastImageViewWithUrl createViewInstance(ThemedReactContext reactContext) {
         if (isValidContextForGlide(reactContext)) {
+            ctx = reactContext;
             requestManager = Glide.with(reactContext);
         }
 
@@ -93,18 +97,37 @@ class FastImageViewManager extends SimpleViewManager<FastImageViewWithUrl> imple
         int viewId = view.getId();
         eventEmitter.receiveEvent(viewId, REACT_ON_LOAD_START_EVENT, new WritableNativeMap());
 
-        if (requestManager != null) {
-            requestManager
-                    // This will make this work for remote and local images. e.g.
-                    //    - file:///
-                    //    - content://
-                    //    - res:/
-                    //    - android.resource://
-                    //    - data:image/png;base64
-                    .load(imageSource.getSourceForLoad())
-                    .apply(FastImageViewConverter.getOptions(source))
-                    .listener(new FastImageRequestListener(key))
-                    .into(view);
+        if (requestManager != null && ctx != null) {
+            if (source.hasKey("id")) {
+                String cachePath = ctx.getCacheDir().toString();
+                String path = cachePath + "/ShowSourcing/5/" + source.getString("id") + ".png";
+                File file = new File(path);
+                if (file.exists()) {
+                    requestManager
+                            .load(file)
+                            .apply(FastImageViewConverter.getOptions(source))
+                            .listener(new FastImageRequestListener(key))
+                            .into(view);
+                } else {
+                    requestManager
+                            .load(imageSource.getSourceForLoad())
+                            .apply(FastImageViewConverter.getOptions(source))
+                            .listener(new FastImageRequestListener(key))
+                            .into(view);
+                }
+            } else {
+                requestManager
+                        // This will make this work for remote and local images. e.g.
+                        //    - file:///
+                        //    - content://
+                        //    - res:/
+                        //    - android.resource://
+                        //    - data:image/png;base64
+                        .load(imageSource.getSourceForLoad())
+                        .apply(FastImageViewConverter.getOptions(source))
+                        .listener(new FastImageRequestListener(key))
+                        .into(view);
+            }
         }
     }
 

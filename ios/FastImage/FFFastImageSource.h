@@ -18,6 +18,8 @@ typedef NS_ENUM(NSInteger, FFFCacheControl) {
 
 // uri for image, or base64
 @property (nonatomic) NSURL* url;
+// image id
+@property (nonatomic) NSString* imageId;
 // priority for image request
 @property (nonatomic) FFFPriority priority;
 // headers for the image request
@@ -26,6 +28,7 @@ typedef NS_ENUM(NSInteger, FFFCacheControl) {
 @property (nonatomic) FFFCacheControl cacheControl;
 
 - (instancetype)initWithURL:(NSURL *)url
+                    imageId:(NSString *)imageId
                    priority:(FFFPriority)priority
                     headers:(NSDictionary *)headers
                cacheControl:(FFFCacheControl)cacheControl;

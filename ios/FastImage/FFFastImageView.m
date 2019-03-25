@@ -134,13 +134,28 @@
         hasCompleted = NO;
         hasErrored = NO;
         
+        NSURL *imageUrl =_source.url;
+        
+        if(_source.imageId != nil) {
+            NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
+            NSString *cacheDirectory = [paths objectAtIndex:0];
+            NSString *path = [NSString stringWithFormat:@"%@/%@/%@%@", cacheDirectory, @"ShowSourcing/5", _source.imageId, @".png"];
+            
+            BOOL isDir = NO;
+            BOOL exists = NO;
+            exists = [[NSFileManager defaultManager] fileExistsAtPath:path isDirectory: &isDir];
+            if(exists) {
+                imageUrl = [NSURL URLWithString:[@"file://" stringByAppendingPathComponent:path]];
+            }
+        }
+        
         // Load the new source.
         // This will work for:
         //   - https://
         //   - file:///var/containers/Bundle/Application/50953EA3-CDA8-4367-A595-DE863A012336/ReactNativeFastImageExample.app/assets/src/images/fields.jpg
         //   - file:///var/containers/Bundle/Application/545685CB-777E-4B07-A956-2D25043BC6EE/ReactNativeFastImageExample.app/assets/src/images/plankton.gif
         //   - file:///Users/dylan/Library/Developer/CoreSimulator/Devices/61DC182B-3E72-4A18-8908-8A947A63A67F/data/Containers/Data/Application/AFC2A0D2-A1E5-48C1-8447-C42DA9E5299D/Documents/images/E1F1D5FC-88DB-492F-AD33-B35A045D626A.jpg"
-        [self sd_setImageWithURL:_source.url
+        [self sd_setImageWithURL:imageUrl
                 placeholderImage:nil
                          options:options
                         progress:^(NSInteger receivedSize, NSInteger expectedSize, NSURL * _Nullable targetURL) {
@@ -170,6 +185,7 @@
                                 }
                             }
                         }];
+        
     }
 }
 
