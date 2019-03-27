@@ -56,20 +56,62 @@ class FastImageViewManager extends SimpleViewManager<FastImageViewWithUrl> imple
         return new FastImageViewWithUrl(reactContext);
     }
 
+    private String getLocalPath(ReadableMap source) {
+        if (source.hasKey("id") && ctx != null) {
+            String cachePath = ctx.getCacheDir().toString();
+            String path = cachePath + "/ShowSourcing/5/" + source.getString("id") + ".png";
+            File file = new File(path);
+            if (file.exists()) {
+                Log.d("HELLO", "co file" + source.getString("id"));
+                return file.getAbsolutePath();
+            }
+        }
+
+        return source.getString("uri");
+    }
+
     @ReactProp(name = "source")
     public void setSrc(FastImageViewWithUrl view, @Nullable ReadableMap source) {
-        if (source == null || !source.hasKey("uri") || isNullOrEmpty(source.getString("uri"))) {
-            // Cancel existing requests.
-            if (requestManager != null) {
-                requestManager.clear(view);
-            }
+        Log.d("HELLO", "DKM");
+        boolean hasUri = source == null || !source.hasKey("uri") || isNullOrEmpty(source.getString("uri"));
+        boolean hasId = source == null || !source.hasKey("id") || isNullOrEmpty(source.getString("id"));
+        if (hasUri) {
+            if(hasId) {
+                Log.d("HELLO", "DKM 1");
+                // Cancel existing requests.
+                if (requestManager != null) {
+                    requestManager.clear(view);
+                }
 
-            if (view.glideUrl != null) {
-                FastImageOkHttpProgressGlideModule.forget(view.glideUrl.toStringUrl());
+                if (view.glideUrl != null) {
+                    FastImageOkHttpProgressGlideModule.forget(view.glideUrl.toStringUrl());
+                }
+                // Clear the image.
+                view.setImageDrawable(null);
+                return;
             }
-            // Clear the image.
-            view.setImageDrawable(null);
-            return;
+        }
+
+        if (source.hasKey("id") && ctx != null) {
+            String cachePath = ctx.getCacheDir().toString();
+            String path = cachePath + "/ShowSourcing/5/" + source.getString("id") + ".png";
+            File file = new File(path);
+            if (file.exists()) {
+                Log.d("HELLO", "co file" + source.getString("id"));
+                if (requestManager != null) {
+                    requestManager.clear(view);
+
+                    String key = updateKey(view, file.getAbsolutePath());
+                    emitEvent(view);
+
+                    requestManager
+                            .load(file)
+                            .apply(FastImageViewConverter.getOptions(source))
+                            .listener(new FastImageRequestListener(key))
+                            .into(view);
+                    return;
+                }
+            }
         }
 
         //final GlideUrl glideUrl = FastImageViewConverter.getGlideUrl(view.getContext(), source);
@@ -82,7 +124,25 @@ class FastImageViewManager extends SimpleViewManager<FastImageViewWithUrl> imple
             requestManager.clear(view);
         }
 
-        String key = glideUrl.toStringUrl();
+        String key = updateKey(view, glideUrl.toStringUrl());
+        emitEvent(view);
+
+        if (requestManager != null) {
+            requestManager
+                    // This will make this work for remote and local images. e.g.
+                    //    - file:///
+                    //    - content://
+                    //    - res:/
+                    //    - android.resource://
+                    //    - data:image/png;base64
+                    .load(imageSource.getSourceForLoad())
+                    .apply(FastImageViewConverter.getOptions(source))
+                    .listener(new FastImageRequestListener(key))
+                    .into(view);
+        }
+    }
+
+    private String updateKey(FastImageViewWithUrl view, String key) {
         FastImageOkHttpProgressGlideModule.expect(key, this);
         List<FastImageViewWithUrl> viewsForKey = VIEWS_FOR_URLS.get(key);
         if (viewsForKey != null && !viewsForKey.contains(view)) {
@@ -92,43 +152,14 @@ class FastImageViewManager extends SimpleViewManager<FastImageViewWithUrl> imple
             VIEWS_FOR_URLS.put(key, newViewsForKeys);
         }
 
+        return key;
+    }
+
+    private void emitEvent(FastImageViewWithUrl view) {
         ThemedReactContext context = (ThemedReactContext) view.getContext();
         RCTEventEmitter eventEmitter = context.getJSModule(RCTEventEmitter.class);
         int viewId = view.getId();
         eventEmitter.receiveEvent(viewId, REACT_ON_LOAD_START_EVENT, new WritableNativeMap());
-
-        if (requestManager != null && ctx != null) {
-            if (source.hasKey("id")) {
-                String cachePath = ctx.getCacheDir().toString();
-                String path = cachePath + "/ShowSourcing/5/" + source.getString("id") + ".png";
-                File file = new File(path);
-                if (file.exists()) {
-                    requestManager
-                            .load(file)
-                            .apply(FastImageViewConverter.getOptions(source))
-                            .listener(new FastImageRequestListener(key))
-                            .into(view);
-                } else {
-                    requestManager
-                            .load(imageSource.getSourceForLoad())
-                            .apply(FastImageViewConverter.getOptions(source))
-                            .listener(new FastImageRequestListener(key))
-                            .into(view);
-                }
-            } else {
-                requestManager
-                        // This will make this work for remote and local images. e.g.
-                        //    - file:///
-                        //    - content://
-                        //    - res:/
-                        //    - android.resource://
-                        //    - data:image/png;base64
-                        .load(imageSource.getSourceForLoad())
-                        .apply(FastImageViewConverter.getOptions(source))
-                        .listener(new FastImageRequestListener(key))
-                        .into(view);
-            }
-        }
     }
 
     @ReactProp(name = "resizeMode")
