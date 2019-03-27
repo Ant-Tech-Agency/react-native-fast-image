@@ -1,90 +1,258 @@
-#import "FFFastImageViewManager.h"
-#import "FFFastImageView.h"
+package com.dylanvann.fastimage;
 
-#import <SDWebImage/SDWebImagePrefetcher.h>
+import android.app.Activity;
+import android.content.Context;
+import android.os.Build;
+import android.util.Log;
 
-@implementation FFFastImageViewManager
+import com.bumptech.glide.Glide;
+import com.bumptech.glide.RequestManager;
+import com.bumptech.glide.load.model.GlideUrl;
+import com.facebook.react.bridge.ReadableMap;
+import com.facebook.react.bridge.WritableMap;
+import com.facebook.react.bridge.WritableNativeMap;
+import com.facebook.react.common.MapBuilder;
+import com.facebook.react.uimanager.SimpleViewManager;
+import com.facebook.react.uimanager.ThemedReactContext;
+import com.facebook.react.uimanager.annotations.ReactProp;
+import com.facebook.react.uimanager.events.RCTEventEmitter;
 
-RCT_EXPORT_MODULE(FastImageView)
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 
-- (FFFastImageView*)view {
-  return [[FFFastImageView alloc] init];
-}
+import javax.annotation.Nullable;
 
-RCT_EXPORT_VIEW_PROPERTY(source, FFFastImageSource)
-RCT_EXPORT_VIEW_PROPERTY(resizeMode, RCTResizeMode)
-RCT_EXPORT_VIEW_PROPERTY(onFastImageLoadStart, RCTDirectEventBlock)
-RCT_EXPORT_VIEW_PROPERTY(onFastImageProgress, RCTDirectEventBlock)
-RCT_EXPORT_VIEW_PROPERTY(onFastImageError, RCTDirectEventBlock)
-RCT_EXPORT_VIEW_PROPERTY(onFastImageLoad, RCTDirectEventBlock)
-RCT_EXPORT_VIEW_PROPERTY(onFastImageLoadEnd, RCTDirectEventBlock)
+import static com.dylanvann.fastimage.FastImageRequestListener.REACT_ON_ERROR_EVENT;
+import static com.dylanvann.fastimage.FastImageRequestListener.REACT_ON_LOAD_END_EVENT;
+import static com.dylanvann.fastimage.FastImageRequestListener.REACT_ON_LOAD_EVENT;
 
-RCT_EXPORT_METHOD(preload:(nonnull NSArray<FFFastImageSource *> *)sources)
-{
-    NSMutableArray *urls = [NSMutableArray arrayWithCapacity:sources.count];
+class FastImageViewManager extends SimpleViewManager<FastImageViewWithUrl> implements FastImageProgressListener {
 
-    [sources enumerateObjectsUsingBlock:^(FFFastImageSource * _Nonnull source, NSUInteger idx, BOOL * _Nonnull stop) {
-        [source.headers enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSString* header, BOOL *stop) {
-            [[SDWebImageDownloader sharedDownloader] setValue:header forHTTPHeaderField:key];
-        }];
-        [urls setObject:source.url atIndexedSubscript:idx];
-    }];
+    private static final String REACT_CLASS = "FastImageView";
+    private static final String REACT_ON_LOAD_START_EVENT = "onFastImageLoadStart";
+    private static final String REACT_ON_PROGRESS_EVENT = "onFastImageProgress";
+    private static final Map<String, List<FastImageViewWithUrl>> VIEWS_FOR_URLS = new WeakHashMap<>();
+    private ThemedReactContext ctx;
 
-    [[SDWebImagePrefetcher sharedImagePrefetcher] prefetchURLs:urls];
-}
+    @Nullable
+    private RequestManager requestManager = null;
 
-RCT_REMAP_METHOD(
-                 loadImage,
-                 loadImageWithSource: (nonnull FFFastImageSource *)source resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject
-                 ) {
-    SDWebImageManager *imageManager = [SDWebImageManager sharedManager];
-    NSString *cacheKey = [imageManager cacheKeyForURL:source.url];
-    NSString *imagePath = [imageManager.imageCache defaultCachePathForKey:cacheKey];
-    
-    // set headers
-    [source.headers enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSString* header, BOOL *stop) {
-        [imageManager.imageDownloader setValue:header forHTTPHeaderField:key];
-    }];
-    
-    // set options
-    SDWebImageOptions options = 0;
-    options |= SDWebImageRetryFailed;
-    switch (source.priority) {
-        case FFFPriorityLow:
-            options |= SDWebImageLowPriority;
-            break;
-        case FFFPriorityNormal:
-            // Priority is normal by default.
-            break;
-        case FFFPriorityHigh:
-            options |= SDWebImageHighPriority;
-            break;
+    @Override
+    public String getName() {
+        return REACT_CLASS;
     }
-    
-    switch (source.cacheControl) {
-        case FFFCacheControlWeb:
-            options |= SDWebImageRefreshCached;
-            break;
-        case FFFCacheControlCacheOnly:
-            options |= SDWebImageCacheMemoryOnly;
-            break;
-        case FFFCacheControlImmutable:
-            break;
-    }
-    
-    // load image
-    [imageManager loadImageWithURL:source.url options:options progress:nil completed:^(UIImage * _Nullable image, NSData * _Nullable data, NSError * _Nullable error, SDImageCacheType cacheType, BOOL finished, NSURL * _Nullable imageURL) {
-        if (error != nil) {
-            reject(@"FastImage", @"Failed to load image", error);
-            return;
+
+    @Override
+    protected FastImageViewWithUrl createViewInstance(ThemedReactContext reactContext) {
+        if (isValidContextForGlide(reactContext)) {
+            ctx = reactContext;
+            requestManager = Glide.with(reactContext);
         }
-        
-        // store image manually (since image manager may call the completion block before storing it in the disk cache)
-        [imageManager.imageCache storeImage:image forKey:cacheKey completion:^{
-            resolve(imagePath);
-        }];
-    }];
+
+        return new FastImageViewWithUrl(reactContext);
+    }
+
+    private String getLocalPath(ReadableMap source) {
+        if (source.hasKey("id") && ctx != null) {
+            String cachePath = ctx.getCacheDir().toString();
+            String path = cachePath + "/ShowSourcing/5/" + source.getString("id") + ".png";
+            File file = new File(path);
+            if (file.exists()) {
+                Log.d("HELLO", "co file" + source.getString("id"));
+                return file.getAbsolutePath();
+            }
+        }
+
+        return source.getString("uri");
+    }
+
+    @ReactProp(name = "source")
+    public void setSrc(FastImageViewWithUrl view, @Nullable ReadableMap source) {
+        Log.d("HELLO", "DKM");
+        boolean hasUri = source == null || !source.hasKey("uri") || isNullOrEmpty(source.getString("uri"));
+        boolean hasId = source == null || !source.hasKey("id") || isNullOrEmpty(source.getString("id"));
+        if (hasUri) {
+            if(hasId) {
+                Log.d("HELLO", "DKM 1");
+                // Cancel existing requests.
+                if (requestManager != null) {
+                    requestManager.clear(view);
+                }
+
+                if (view.glideUrl != null) {
+                    FastImageOkHttpProgressGlideModule.forget(view.glideUrl.toStringUrl());
+                }
+                // Clear the image.
+                view.setImageDrawable(null);
+                return;
+            }
+        }
+
+        if (source.hasKey("id") && ctx != null) {
+            String cachePath = ctx.getCacheDir().toString();
+            String path = cachePath + "/ShowSourcing/5/" + source.getString("id") + ".png";
+            File file = new File(path);
+            if (file.exists()) {
+                Log.d("HELLO", "co file" + source.getString("id"));
+                if (requestManager != null) {
+                    requestManager.clear(view);
+
+                    String key = updateKey(view, file.getAbsolutePath());
+                    emitEvent(view);
+
+                    requestManager
+                            .load(file)
+                            .apply(FastImageViewConverter.getOptions(source))
+                            .listener(new FastImageRequestListener(key))
+                            .into(view);
+                    return;
+                }
+            }
+        }
+
+        //final GlideUrl glideUrl = FastImageViewConverter.getGlideUrl(view.getContext(), source);
+        final FastImageSource imageSource = FastImageViewConverter.getImageSource(view.getContext(), source);
+        final GlideUrl glideUrl = imageSource.getGlideUrl();
+
+        // Cancel existing request.
+        view.glideUrl = glideUrl;
+        if (requestManager != null) {
+            requestManager.clear(view);
+        }
+
+        String key = updateKey(view, glideUrl.toStringUrl());
+        emitEvent(view);
+
+        if (requestManager != null) {
+            requestManager
+                    // This will make this work for remote and local images. e.g.
+                    //    - file:///
+                    //    - content://
+                    //    - res:/
+                    //    - android.resource://
+                    //    - data:image/png;base64
+                    .load(imageSource.getSourceForLoad())
+                    .apply(FastImageViewConverter.getOptions(source))
+                    .listener(new FastImageRequestListener(key))
+                    .into(view);
+        }
+    }
+
+    private String updateKey(FastImageViewWithUrl view, String key) {
+        FastImageOkHttpProgressGlideModule.expect(key, this);
+        List<FastImageViewWithUrl> viewsForKey = VIEWS_FOR_URLS.get(key);
+        if (viewsForKey != null && !viewsForKey.contains(view)) {
+            viewsForKey.add(view);
+        } else if (viewsForKey == null) {
+            List<FastImageViewWithUrl> newViewsForKeys = new ArrayList<>(Collections.singletonList(view));
+            VIEWS_FOR_URLS.put(key, newViewsForKeys);
+        }
+
+        return key;
+    }
+
+    private void emitEvent(FastImageViewWithUrl view) {
+        ThemedReactContext context = (ThemedReactContext) view.getContext();
+        RCTEventEmitter eventEmitter = context.getJSModule(RCTEventEmitter.class);
+        int viewId = view.getId();
+        eventEmitter.receiveEvent(viewId, REACT_ON_LOAD_START_EVENT, new WritableNativeMap());
+    }
+
+    @ReactProp(name = "resizeMode")
+    public void setResizeMode(FastImageViewWithUrl view, String resizeMode) {
+        final FastImageViewWithUrl.ScaleType scaleType = FastImageViewConverter.getScaleType(resizeMode);
+        view.setScaleType(scaleType);
+    }
+
+    @Override
+    public void onDropViewInstance(FastImageViewWithUrl view) {
+        // This will cancel existing requests.
+        if (requestManager != null) {
+            requestManager.clear(view);
+        }
+
+        if (view.glideUrl != null) {
+            final String key = view.glideUrl.toString();
+            FastImageOkHttpProgressGlideModule.forget(key);
+            List<FastImageViewWithUrl> viewsForKey = VIEWS_FOR_URLS.get(key);
+            if (viewsForKey != null) {
+                viewsForKey.remove(view);
+                if (viewsForKey.size() == 0) VIEWS_FOR_URLS.remove(key);
+            }
+        }
+
+        super.onDropViewInstance(view);
+    }
+
+    @Override
+    public Map<String, Object> getExportedCustomDirectEventTypeConstants() {
+        return MapBuilder.<String, Object>builder()
+                .put(REACT_ON_LOAD_START_EVENT, MapBuilder.of("registrationName", REACT_ON_LOAD_START_EVENT))
+                .put(REACT_ON_PROGRESS_EVENT, MapBuilder.of("registrationName", REACT_ON_PROGRESS_EVENT))
+                .put(REACT_ON_LOAD_EVENT, MapBuilder.of("registrationName", REACT_ON_LOAD_EVENT))
+                .put(REACT_ON_ERROR_EVENT, MapBuilder.of("registrationName", REACT_ON_ERROR_EVENT))
+                .put(REACT_ON_LOAD_END_EVENT, MapBuilder.of("registrationName", REACT_ON_LOAD_END_EVENT))
+                .build();
+    }
+
+    @Override
+    public void onProgress(String key, long bytesRead, long expectedLength) {
+        List<FastImageViewWithUrl> viewsForKey = VIEWS_FOR_URLS.get(key);
+        if (viewsForKey != null) {
+            for (FastImageViewWithUrl view : viewsForKey) {
+                WritableMap event = new WritableNativeMap();
+                event.putInt("loaded", (int) bytesRead);
+                event.putInt("total", (int) expectedLength);
+                ThemedReactContext context = (ThemedReactContext) view.getContext();
+                RCTEventEmitter eventEmitter = context.getJSModule(RCTEventEmitter.class);
+                int viewId = view.getId();
+                eventEmitter.receiveEvent(viewId, REACT_ON_PROGRESS_EVENT, event);
+            }
+        }
+    }
+
+    @Override
+    public float getGranularityPercentage() {
+        return 0.5f;
+    }
+
+    private boolean isNullOrEmpty(final String url) {
+        return url == null || url.trim().isEmpty();
+    }
+
+
+    private static boolean isValidContextForGlide(final Context context) {
+        if (context == null) {
+            return false;
+        }
+        if (context instanceof Activity) {
+            final Activity activity = (Activity) context;
+            if (isActivityDestroyed(activity)) {
+                return false;
+            }
+        }
+
+        if (context instanceof ThemedReactContext) {
+            final Context baseContext = ((ThemedReactContext) context).getBaseContext();
+            if (baseContext instanceof Activity) {
+                final Activity baseActivity = (Activity) baseContext;
+                return !isActivityDestroyed(baseActivity);
+            }
+        }
+
+        return true;
+    }
+
+    private static boolean isActivityDestroyed(Activity activity) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            return activity.isDestroyed() || activity.isFinishing();
+        } else {
+            return activity.isFinishing() || activity.isChangingConfigurations();
+        }
+
+    }
 }
-
-@end
-
