@@ -72,22 +72,11 @@ class FastImageViewManager extends SimpleViewManager<FastImageViewWithUrl> imple
 
     @ReactProp(name = "source")
     public void setSrc(FastImageViewWithUrl view, @Nullable ReadableMap source) {
-        Log.d("HELLO", "DKM");
         boolean hasUri = source == null || !source.hasKey("uri") || isNullOrEmpty(source.getString("uri"));
         boolean hasId = source == null || !source.hasKey("id") || isNullOrEmpty(source.getString("id"));
         if (hasUri) {
             if(hasId) {
-                Log.d("HELLO", "DKM 1");
-                // Cancel existing requests.
-                if (requestManager != null) {
-                    requestManager.clear(view);
-                }
-
-                if (view.glideUrl != null) {
-                    FastImageOkHttpProgressGlideModule.forget(view.glideUrl.toStringUrl());
-                }
-                // Clear the image.
-                view.setImageDrawable(null);
+                clearImage(view);
                 return;
             }
         }
@@ -97,7 +86,6 @@ class FastImageViewManager extends SimpleViewManager<FastImageViewWithUrl> imple
             String path = cachePath + "/ShowSourcing/5/" + source.getString("id") + ".png";
             File file = new File(path);
             if (file.exists()) {
-                Log.d("HELLO", "co file" + source.getString("id"));
                 if (requestManager != null) {
                     requestManager.clear(view);
 
@@ -111,6 +99,9 @@ class FastImageViewManager extends SimpleViewManager<FastImageViewWithUrl> imple
                             .into(view);
                     return;
                 }
+            } else if (isNullOrEmpty(source.getString("uri"))) {
+                clearImage(view);
+                return;
             }
         }
 
@@ -140,6 +131,18 @@ class FastImageViewManager extends SimpleViewManager<FastImageViewWithUrl> imple
                     .listener(new FastImageRequestListener(key))
                     .into(view);
         }
+    }
+
+    private void clearImage(FastImageViewWithUrl view) {
+        if (requestManager != null) {
+            requestManager.clear(view);
+        }
+
+        if (view.glideUrl != null) {
+            FastImageOkHttpProgressGlideModule.forget(view.glideUrl.toStringUrl());
+        }
+        // Clear the image.
+        view.setImageDrawable(null);
     }
 
     private String updateKey(FastImageViewWithUrl view, String key) {
